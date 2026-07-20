@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Sleeping AI Demo</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-functions-compat.js"></script>
+</head>
+<body>
+  <h2>Sleeping AI Demo</h2>
+  <input id="topic" placeholder="Enter a topic..." />
+  <button onclick="getSummaries()">Get Story Summaries</button>
+  <div id="summaries"></div>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyA6xIYriLy0vBwhDjOoktWlQQqhzNHtfL",
+      authDomain: "bed-stories-bff80.firebaseapp.com",
+      projectId: "bed-stories-bff80",
+      appId: "1:625912583218:web:0fc9ef2b047c3740ce182b"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const functions = firebase.app().functions("us-central1");
+
+    function getSummaries() {
+      const topic = document.getElementById("topic").value;
+      const generateSummaries = functions.httpsCallable("generateSummaries");
+      generateSummaries({ topic }).then(result => {
+        const summaries = result.data.summaries;
+        const container = document.getElementById("summaries");
+        container.innerHTML = "";
+        summaries.forEach((s, i) => {
+          const btn = document.createElement("button");
+          btn.innerText = s;
+          btn.onclick = () => generateStory(s);
+          container.appendChild(btn);
+          container.appendChild(document.createElement("br"));
+        });
+      });
+    }
+
+    function generateStory(summary) {
+      const generateStoryAndAudio = functions.httpsCallable("generateStoryAndAudio");
+      generateStoryAndAudio({ selectedSummary: summary }).then(result => {
+        alert("Story:\n\n" + result.data.story + "\n\nAudio link:\n" + result.data.audioUrl);
+        window.open(result.data.audioUrl, "_blank");
+      });
+    }
+  </script>
+</body>
+</html>

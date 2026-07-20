@@ -1,0 +1,415 @@
+<!DOCTYPE html> 
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Sleeping AI — Backend Tester</title>
+  <style>
+    body { font-family: system-ui, Arial, sans-serif; margin: 28px; max-width: 900px; }
+    label { display:block; margin: 10px 0 4px; font-weight:600; }
+    input, textarea, select, button { width: 100%; padding: 10px; margin-bottom: 14px; }
+    button { cursor:pointer; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .muted { color:#666; font-size: 0.9rem; }
+    pre { background:#f6f6f6; padding:12px; border-radius:8px; overflow:auto; }
+    .hr { height:1px; background:#e8e8e8; margin:24px 0; }
+    .admin { background:#fafafa; border:1px solid #eee; padding:14px; border-radius:8px; display:none; }
+    code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; }
+    .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+    /* Stripe button style */
+    .stripe-btn {
+      width: auto;
+      padding: 8px 18px;
+      border-radius: 9999px; 
+      background: #635bff;
+      color: white;
+      font-weight: 600;
+      border: none;
+    }
+    .stripe-btn:hover {
+      background: #5348c7;
+    }
+    .pay-row {
+      display:flex;
+      gap:8px;
+      align-items:center;
+      justify-content:flex-end;
+      margin:10px 0;
+    }
+    .pack-select {
+      width:auto;
+      padding:8px 10px;
+    }
+  </style>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import {
+      getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut,
+      // Emulator connectors
+      connectAuthEmulator
+    } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
+    import {
+      getFunctions, httpsCallable,
+      // Emulator connectors
+      connectFunctionsEmulator
+    } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-functions.js";
+    import {
+      getFirestore, doc, getDoc,
+      // Emulator connectors 
+      connectFirestoreEmulator
+    } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
+
+    // Firebase config
+    const firebaseConfig = {
+      apiKey: "AIzaSyA6xIYriLy0vBwhDjOoktWlQQqhzNHtfLE",
+      authDomain: "bed-stories-bff80.firebaseapp.com",
+      projectId: "bed-stories-bff80",
+      storageBucket: "bed-stories-bff80.appspot.com",
+      messagingSenderId: "625912583218",
+      appId: "1:625912583218:web:0fc9ef2b047c3740ce182b",
+      measurementId: "G-2S8DVWS87N"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const functions = getFunctions(app, "us-central1");
+    const db = getFirestore(app);
+
+    // Point SDK at local emulators ONLY when running the page locally
+    const isLocal =
+      location.hostname === "localhost" ||
+      location.hostname === "127.0.0.1" ||
+      location.hostname === "0.0.0.0";
+
+    if (isLocal) {
+      connectAuthEmulator(auth, "http://127.0.0.1:9099", { disableWarnings: true });
+      connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+      connectFirestoreEmulator(db, "127.0.0.1", 8080);
+    }
+    
+    // Helpers
+    function setStatus(msg) {
+      document.getElementById("status").textContent = msg;
+    }
+
+    function setSummaries(items = []) {
+      const sel = document.getElementById("summaries");
+      sel.innerHTML = "";
+      items.forEach((s, i) => {
+        const opt = document.createElement("option");
+        opt.value = s;
+        opt.textContent = `${i+1}. ${s}`;
+        sel.appendChild(opt);
+      });
+      document.getElementById("summariesWrap").style.display = items.length ? "block" : "none";
+    }
+
+    // Populate voice catalog
+    async function loadVoices() {
+      try {
+        const fn = httpsCallable(functions, "listVoices");
+        const res = await fn();
+        const voices = (res && res.data && res.data.voices) || [];
+        const sel = document.getElementById("voiceId");
+        sel.innerHTML = "";
+        const none = document.createElement("option");
+        none.value = "";
+        none.textContent = "(auto by gender)";
+        sel.appendChild(none);
+        voices.forEach(v => {
+          const opt = document.createElement("option");
+          opt.value = v.id;
+          opt.textContent = `${v.label} — ${v.name}`;
+          sel.appendChild(opt);
+        });
+      } catch (e) {
+        console.error("listVoices failed:", e);
+      }
+    }
+
+    // Auth
+    async function doLogin() {
+      try {
+        const email = document.getElementById("email").value.trim();
+        const pass  = document.getElementById("password").value;
+        setStatus("Signing in…");
+        const cred = await signInWithEmailAndPassword(auth, email, pass);
+        setStatus(`Signed in as: ${cred.user.email}`);
+      } catch (err) {
+        console.error(err);
+        setStatus("Login error: " + (err.message || err));
+      }
+    }
+
+    async function doLogout() {
+      await signOut(auth);
+      setStatus("Signed out.");
+    }
+
+    // Calls
+    async function getSummaries() {
+      try {
+        const topic = document.getElementById("topic").value.trim();
+        if (!topic) { setStatus("Enter a topic first."); return; }
+        setStatus("Calling generateSummaries…");
+        const fn = httpsCallable(functions, "generateSummaries");
+        const res = await fn({ topic });
+        const summaries = (res && res.data && res.data.summaries) || [];
+        setSummaries(summaries);
+        document.getElementById("summariesJson").textContent = JSON.stringify(summaries, null, 2);
+        setStatus(`Got ${summaries.length} summaries.`);
+      } catch (err) {
+        console.error(err);
+        setStatus("generateSummaries error: " + (err.message || err));
+      }
+    }
+
+    async function getStoryAndAudio() {
+      try {
+        const selectedSummary = document.getElementById("summaries").value;
+        if (!selectedSummary) { setStatus("Pick a summary first."); return; }
+
+        // Capture options
+        const minutes = Number(document.getElementById("minutes").value || 10);
+        const rate = Number(document.getElementById("rate").value || 1.0);
+        const voiceGender = document.getElementById("voiceGender").value || "FEMALE";
+        const voiceId = document.getElementById("voiceId").value || "";
+
+        // Ambient mixing options
+        const musicTrack = (document.getElementById("musicTrack").value || "").trim();
+        const musicVolume = Number(document.getElementById("musicVolume").value || 0.25);
+
+        setStatus("Calling generateStoryAndAudio… (may take ~10–30s)");
+        const fn = httpsCallable(functions, "generateStoryAndAudio");
+        const res = await fn({
+          selectedSummary,
+          minutes,
+          rate,
+          voice: voiceGender,
+          voiceId,
+          musicTrack,
+          musicVolume
+        });
+
+        const story = (res && res.data && res.data.story) || "";
+        const audioUrl = (res && res.data && res.data.audioUrl) || "";
+        document.getElementById("story").value = story;
+        document.getElementById("audio").src = audioUrl;
+        document.getElementById("audioUrl").textContent = audioUrl || "(no url)";
+        setStatus("Story + audio ready.");
+      } catch (err) {
+        console.error(err);
+        setStatus("generateStoryAndAudio error: " + (err.message || err));
+      }
+    }
+
+    // Frontend helper
+    const PACKS = {
+      PACK_25:  { credits: 25,  amountCents: 399  },
+      PACK_100: { credits: 100, amountCents: 999  },
+      PACK_250: { credits: 250, amountCents: 1999 }
+    };
+
+    // Stripe: create checkout session
+    async function buyCredits() {
+      try {
+        setStatus("Creating Stripe checkout session…");
+        const packId = (document.getElementById("packId").value || "PACK_25");
+        const pack = PACKS[packId];
+        if (!pack || !pack.credits || pack.credits <= 0) {
+          setStatus("Stripe error: invalid credit pack.");
+          return;
+        }
+        const fn = httpsCallable(functions, "createCheckoutSession");
+        const res = await fn({ packId, credits: pack.credits });
+        const url = res && res.data && res.data.url;
+        if (url) {
+          window.location.href = url;
+        } else {
+          setStatus("Stripe session failed: no URL");
+        }
+      } catch (err) {
+        console.error(err);
+        setStatus("Stripe error: " + (err.message || err));
+      }
+    }
+
+    onAuthStateChanged(auth, async (u) => {
+      if (u) {
+        document.getElementById("logoutBtn").style.display = "inline-block";
+        document.getElementById("loginBtn").style.display = "none";
+        setStatus(`Signed in as: ${u.email}`);
+
+        try {
+          const snap = await getDoc(doc(db, "users", u.uid));
+          if (snap.exists() && snap.data().role === "admin") {
+            document.getElementById("adminPanel").style.display = "block";
+          } else {
+            document.getElementById("adminPanel").style.display = "none";
+          }
+        } catch (err) {
+          console.error("Role check failed:", err);
+          document.getElementById("adminPanel").style.display = "none";
+        }
+      } else {
+        document.getElementById("logoutBtn").style.display = "none";
+        document.getElementById("loginBtn").style.display = "inline-block";
+        document.getElementById("adminPanel").style.display = "none";
+        setStatus("Not signed in");
+      }
+    });
+
+    window.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("loginBtn").addEventListener("click", doLogin);
+      document.getElementById("logoutBtn").addEventListener("click", doLogout);
+      document.getElementById("summariesBtn").addEventListener("click", getSummaries);
+      document.getElementById("storyBtn").addEventListener("click", getStoryAndAudio);
+      document.getElementById("buyBtn").addEventListener("click", buyCredits);
+
+      // Admin grant credits
+      const grantFn = httpsCallable(functions, "grantCredits");
+      document.getElementById("grantBtn").addEventListener("click", async () => {
+        try {
+          const targetUid = document.getElementById("targetUid").value.trim();
+          const amount = Number(document.getElementById("grantAmount").value || 0);
+          if (!targetUid || !amount) {
+            alert("Enter a target UID and a non-zero amount.");
+            return;
+          }
+          const r = await grantFn({ targetUid, amount });
+          const newBal = r && r.data && r.data.credits;
+          alert(`Granted ${amount} credits. New balance: ${newBal}`);
+        } catch (e) {
+          alert("Grant failed: " + (e.message || e));
+        }
+      });
+
+      // Load voices once at start
+      loadVoices();
+    });
+  </script>
+</head>
+
+<body>
+  <h1>Sleeping AI — Backend Test</h1>
+  <p class="muted">Log in → get summaries → (choose voice & options) → generate story + audio.</p>
+
+  <div class="row">
+    <div>
+      <label>Email</label>
+      <input id="email" placeholder="tester@example.com" />
+    </div>
+    <div>
+      <label>Password</label>
+      <input id="password" type="password" placeholder="••••••••" />
+    </div>
+  </div>
+  <button id="loginBtn">Sign In</button>
+  <button id="logoutBtn" style="display:none;">Sign Out</button>
+
+  <!--Stripe oval button/Pack selector -->
+  <div class="pay-row">
+    <select id="packId" class="pack-select">
+      <option value="PACK_25">25 credits — $3.99</option>
+      <option value="PACK_100">100 credits — $9.99</option>
+      <option value="PACK_250">250 credits — $19.99</option>
+    </select>
+    <button id="buyBtn" class="stripe-btn">Buy Credits</button>
+  </div>
+
+  <div class="hr"></div>
+
+  <label>Topic</label>
+  <input id="topic" placeholder="e.g., peaceful ocean at night" />
+  <button id="summariesBtn">Get Summaries</button>
+
+  <div id="summariesWrap" style="display:none;">
+    <label>Choose a summary</label>
+    <select id="summaries"></select>
+
+    <!-- TTS options -->
+    <div class="row-3">
+      <div>
+        <label>Minutes (5/10/20)</label>
+        <input id="minutes" type="number" min="1" value="10" />
+      </div>
+      <div>
+        <label>Speaking Rate (0.85–1.15)</label>
+        <input id="rate" type="number" step="0.05" min="0.5" max="1.5" value="1.0" />
+      </div>
+      <div>
+        <label>Gender</label>
+        <select id="voiceGender">
+          <option value="FEMALE" selected>FEMALE</option>
+          <option value="MALE">MALE</option>
+        </select>
+      </div>
+    </div>
+
+    <label>Voice (optional, concrete)</label>
+    <select id="voiceId">
+      <option value="">(auto by gender)</option>
+    </select>
+
+    <!-- Ambient music options -->
+    <div class="row">
+      <div>
+        <label>Ambient Track (filename in <code>ambient/</code>)</label>
+        <input id="musicTrack" placeholder="e.g., ocean-waves.mp3" />
+        <p class="muted">Examples: ocean-waves.mp3, silent-waves.mp3, nature-rain.mp3, midnight-forest.mp3</p>
+      </div>
+      <div>
+        <label>Music Volume (0.0–1.0)</label>
+        <input id="musicVolume" type="number" step="0.05" min="0" max="1" value="0.25" />
+      </div>
+    </div>
+
+    <button id="storyBtn">Generate Story + Audio</button>
+  </div>
+
+  <div class="hr"></div>
+
+  <h3>Status</h3>
+  <pre id="status">Idle.</pre>
+
+  <h3>Summaries (raw)</h3>
+  <pre id="summariesJson">[]</pre>
+
+  <h3>Story</h3>
+  <textarea id="story" rows="12" placeholder="Generated story will appear here…"></textarea>
+
+  <h3>Audio</h3>
+  <audio id="audio" controls preload="none"></audio>
+  <div class="muted">Audio URL: <span id="audioUrl"></span></div>
+
+  <div id="adminPanel" class="admin">
+    <h3>Admin: Grant Credits</h3>
+    <div class="row">
+      <div>
+        <label>Target UID</label>
+        <input id="targetUid" placeholder="paste user uid" />
+      </div>
+      <div>
+        <label>Amount</label>
+        <input id="grantAmount" type="number" value="10" />
+      </div>
+    </div>
+    <button id="grantBtn">Grant Credits (admin only)</button>
+  </div>
+
+  <p class="muted" style="margin-top:20px;">
+    Note: For <strong>generateStoryAndAudio</strong> to succeed, the signed-in user must have
+    a numeric <code>credits</code> field in <code>users/{uid}</code> (≥ 1). Each call decrements by 1.
+  </p>
+</body>
+</html>
+
+
+
+
+
+
+
+
+

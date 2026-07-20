@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+
+      // User can create their own doc but cannot set role
+      allow create: if request.auth != null
+                    && request.auth.uid == uid
+                    && !("role" in request.resource.data);
+
+      // User can update their own doc but cannot change role
+      allow update: if request.auth != null
+                    && request.auth.uid == uid
+                    && (
+                      !("role" in request.resource.data)
+                      || request.resource.data.role == resource.data.role
+                    );
+
+      allow delete: if false;
+    }
+
+    // Stories (private/public library)
+    match /stories/{storyId} {
+      allow read: if resource.data.visibility == "public"
+                  || (request.auth != null && request.auth.uid == resource.data.uid);
+
+      allow create: if request.auth != null
+                    && request.auth.uid == request.resource.data.uid;
+
+      allow update, delete: if request.auth != null
+                            && request.auth.uid == resource.data.uid;
+    }
+
+    // Community public copies of stories
+    match /community_stories/{storyId} {
+      allow read: if true;
+
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.status in ["active","hidden","removed"];
+
+      allow update: if request.auth != null
+        && (
+          request.auth.uid == resource.data.uid ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"
+        );
+
+      allow delete: if false;
+
+      // Comments under a specific community story
+      match /story_comments/{commentId} {
+        allow read: if resource.data.status == "active"
+                    || (request.auth != null && request.auth.uid == resource.data.uid)
+                    || (request.auth != null &&
+                        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin");
+
+        allow create: if request.auth != null
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 1000
+          && exists(/databases/$(database)/documents/community_stories/$(storyId))
+          && get(/databases/$(database)/documents/community_stories/$(storyId)).data.status == "active";
+
+        allow delete, update: if request.auth != null
+          && (
+            request.auth.uid == resource.data.uid ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"
+          );
+      }
+    }
+
+    // Likes for library stories
+    match /story_likes/{likeId} {
+      allow read: if true;
+
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.storyId is string
+        && exists(/databases/$(database)/documents/stories/$(request.resource.data.storyId))
+        && get(/databases/$(database)/documents/stories/$(request.resource.data.storyId)).data.visibility == "public";
+
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid;
+
+      allow update: if false;
+    }
+
+    // Community likes
+    match /community_likes/{likeId} {
+      allow read: if true;
+
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.storyId is string
+        && exists(/databases/$(database)/documents/community_stories/$(request.resource.data.storyId))
+        && get(/databases/$(database)/documents/community_stories/$(request.resource.data.storyId)).data.status == "active";
+
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid;
+
+      allow update: if false;
+    }
+
+    // Comments for library stories
+    match /story_comments/{commentId} {
+      allow read: if resource.data.status == "visible"
+                  || (request.auth != null && request.auth.uid == resource.data.uid);
+
+      allow create: if request.auth != null
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() <= 1000
+        && request.resource.data.storyId is string
+        && exists(/databases/$(database)/documents/stories/$(request.resource.data.storyId))
+        && get(/databases/$(database)/documents/stories/$(request.resource.data.storyId)).data.visibility == "public";
+
+      allow delete: if request.auth != null
+        && resource.data.uid == request.auth.uid;
+
+      allow update: if false;
+    }
+
+    // Reports Admin only via Functions
+    match /reports/{reportId} {
+      allow read: if false;
+      allow create: if request.auth != null
+        && request.resource.data.type in ["story","comment","community_story","community_comment"]
+        && request.resource.data.targetId is string
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() <= 500
+        && request.resource.data.status == "open"
+        && request.resource.data.reporterUid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // Rate limit
+    match /rate_limits/{docId} {
+      allow read: if request.auth != null && request.auth.uid == resource.data.uid;
+      allow write: if request.auth != null && request.auth.uid == request.resource.data.uid;
+    }
+
+    // Purchases/analytics backend only writes
+    match /purchases/{pId} {
+      allow read: if request.auth != null
+        && (
+          (("uid" in resource.data) && resource.data.uid == request.auth.uid) ||
+          (("targetUid" in resource.data) && resource.data.targetUid == request.auth.uid)
+        );
+      allow write: if false;
+    }
+
+    match /analytics/{aId} {
+      allow read: if false;
+      allow write: if false;
+    }
+  }
+}
+
+  
+

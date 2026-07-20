@@ -1,0 +1,30 @@
+{
+  "name": "functions",
+  "description": "Cloud Functions for Firebase",
+  "scripts": {
+    "test": "jest  --runInBand",
+    "test:watch": "jest --watch",
+    "test:emulator": "firebase emulators:exec --only firestore,functions,storage --import ../../emulator-backup 'npm test'"
+  },
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "dependencies": {
+    "ffmpeg-static": "^5.2.0",
+    "ffprobe-static": "^3.1.0",
+    "firebase": "^9.23.0",
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^6.4.0",
+    "fluent-ffmpeg": "^2.1.3",
+    "openai": "^4.20.0",
+    "stripe": "^14.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.15.0",
+    "eslint-config-google": "^0.14.0",
+    "firebase-functions-test": "^3.1.0",
+    "jest": "^30.1.3"
+  },
+  "private": true
+}
